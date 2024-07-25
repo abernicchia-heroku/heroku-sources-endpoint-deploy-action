@@ -23,7 +23,6 @@ runs:
   using: "composite"
   steps:
     - name: Create Source Endpoint
-      id: source_endpoint
       shell: bash
       run: |
         echo 'Creating a source endpoint...'
