@@ -12,10 +12,7 @@ inputs:
     default: "*"
     description: "The glob pattern for files to include in the deployment"
     required: false
-outputs:
-  url:
-    description: "The URL for the app"
-    value: ${{ steps.output-url.outputs.url }}
+
 branding:
   icon: "play-circle"
   color: "purple"
@@ -70,8 +67,3 @@ runs:
 
         echo "Build status: $NEW_BUILD_STATUS"
         if [ "$NEW_BUILD_STATUS" != "succeeded" ]; then exit 1; fi
-
-    - name: Set Output:url
-      id: output-url
-      shell: bash
-      run: echo url=$(echo https://${{ inputs.heroku-app-name }}.herokuapp.com) >> $GITHUB_OUTPUT
