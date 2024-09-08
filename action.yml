@@ -1,6 +1,6 @@
 name: "Heroku Sources Endpoint deploy Action"
 description: Use Heroku Sources Endpoint API to upload the source code and release it to an app
-author: A.Bernicchia
+author: Andrea Bernicchia
 inputs:
   heroku-app-name:
     description: "Your Heroku App name"
@@ -8,10 +8,6 @@ inputs:
   heroku-api-key:
     description: "Your Heroku API key"
     required: true
-  files-glob:
-    default: "*"
-    description: "The glob pattern for files to include in the deployment"
-    required: false
 
 branding:
   icon: "play-circle"
@@ -22,48 +18,52 @@ runs:
     - name: Create Source Endpoint
       shell: bash
       run: |
-        echo 'Creating a source endpoint...'
-        SOURCE_ENDPOINT=$(curl -X POST https://api.heroku.com/sources \
+        echo "Creating a source endpoint..."
+        SOURCE_ENDPOINT=$(curl --fail-with-body -X POST https://api.heroku.com/sources \
         -H "Content-Type: application/json" \
         -H "Accept: application/vnd.heroku+json; version=3" \
         -H "Authorization: Bearer ${{ inputs.heroku-api-key }}" | \
-        jq -r '{get: .source_blob.get_url, put: .source_blob.put_url}') && echo SOURCE_ENDPOINT=$SOURCE_ENDPOINT >> $GITHUB_ENV
+        jq -er '{get: .source_blob.get_url, put: .source_blob.put_url}')
+        echo "SOURCE_ENDPOINT=$SOURCE_ENDPOINT" >> $GITHUB_ENV
 
     # it assumes that this action is preceeded by the checkout action to access the source code
+    # files filtering must happen at checkout (see sparse-checkout from https://github.com/actions/checkout), 
+    # here everything is included using find to avoid tar unwanted options injection in case the source repo has been compromised (with files name that mimic tar options e.g. "--checkpoint-action=exec=sh shell.sh")
+    # tar output file is created under /tmp to avoid the "warning file changed as we read it" that forces exit code to 1
     - name: Compress Source Code
       shell: bash
       run: |
-        tar -czvf source.tar.gz ${{ inputs.files-glob }}
+        find . -name "*" -print0 | xargs -0 tar -czvf /tmp/source.tar.gz
 
     - name: Upload Source Code
       shell: bash
       run: |
-        export URL=$(echo ${{ toJSON(env.SOURCE_ENDPOINT) }} | jq -r '.put')
-        curl $URL -X PUT -H 'Content-Type:' --data-binary @source.tar.gz
+        URL=$(echo ${{ toJSON(env.SOURCE_ENDPOINT) }} | jq -er '.put')
+        curl --fail-with-body $URL -X PUT -H 'Content-Type:' --data-binary @/tmp/source.tar.gz
 
     - name: Create Build
       shell: bash
       run: |
-        echo 'Create Build'
-        export SOURCE_GET_URL=$(echo ${{ toJSON(env.SOURCE_ENDPOINT) }} | jq -r '.get')
-        export NEW_BUILD_OUTPUT=$(curl -X POST https://api.heroku.com/apps/${{ inputs.heroku-app-name }}/builds \
+        echo "Create Build"
+        SOURCE_GET_URL=$(echo ${{ toJSON(env.SOURCE_ENDPOINT) }} | jq -er '.get')
+        NEW_BUILD_OUTPUT=$(curl --fail-with-body -X POST https://api.heroku.com/apps/${{ inputs.heroku-app-name }}/builds \
         -d '{"source_blob":{"url":"'"$SOURCE_GET_URL"'", "version": "'"${GITHUB_SHA::7}"'"}}' \
-        -H 'Accept: application/vnd.heroku+json; version=3' \
+        -H "Accept: application/vnd.heroku+json; version=3" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer ${{ inputs.heroku-api-key }}")
 
         echo "NEW_BUILD_OUTPUT=$NEW_BUILD_OUTPUT"
-        export NEW_BUILD_ID=$(echo $NEW_BUILD_OUTPUT | jq -r '.id')
-        export OUTPUT_STREAM_URL=$(echo $NEW_BUILD_OUTPUT | jq -r '.output_stream_url')
+        NEW_BUILD_ID=$(echo "$NEW_BUILD_OUTPUT" | jq -er '.id')
+        OUTPUT_STREAM_URL=$(echo "$NEW_BUILD_OUTPUT" | jq -er '.output_stream_url')
         echo "OUTPUT_STREAM_URL=$OUTPUT_STREAM_URL"
 
         echo "Getting build output..."
-        curl --silent $OUTPUT_STREAM_URL
-        NEW_BUILD_STATUS=$(curl --silent https://api.heroku.com/apps/${{ inputs.heroku-app-name }}/builds/$NEW_BUILD_ID \
-        -H 'Accept: application/vnd.heroku+json; version=3' \
+        curl --silent "$OUTPUT_STREAM_URL"
+        NEW_BUILD_STATUS=$(curl --silent "https://api.heroku.com/apps/${{ inputs.heroku-app-name }}/builds/$NEW_BUILD_ID" \
+        -H "Accept: application/vnd.heroku+json; version=3" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer ${{ inputs.heroku-api-key }}" | \
-        jq -r '.status')
+        jq -er '.status')
 
         echo "Build status: $NEW_BUILD_STATUS"
         if [ "$NEW_BUILD_STATUS" != "succeeded" ]; then exit 1; fi
