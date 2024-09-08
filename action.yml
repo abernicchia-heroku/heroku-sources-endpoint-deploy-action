@@ -54,7 +54,6 @@ runs:
 
         NEW_BUILD_ID=$(echo "$NEW_BUILD_OUTPUT" | jq -er '.id')
         OUTPUT_STREAM_URL=$(echo "$NEW_BUILD_OUTPUT" | jq -er '.output_stream_url')
-        echo "OUTPUT_STREAM_URL=$OUTPUT_STREAM_URL"
 
         echo "Getting build output..."
         curl --silent -S --fail-with-body "$OUTPUT_STREAM_URL"
