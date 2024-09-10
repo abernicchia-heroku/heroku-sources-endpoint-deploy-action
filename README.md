@@ -4,3 +4,30 @@ In a GitHub Workflow, this action requires to be preceeded by the [actions/check
 
 ## Disclaimer
 The author of this article makes any warranties about the completeness, reliability and accuracy of this information. **Any action you take upon the information of this website is strictly at your own risk**, and the author will not be liable for any losses and damages in connection with the use of the website and the information provided. **None of the items included in this repository form a part of the Heroku Services.**
+
+## How to use it
+Create the following GitHub workflow under `.github/workflows` directory within your repository and add the following YAML file and configure it. 
+
+This will be executed on push events
+```
+# push.yml
+name: Deploy push
+
+on:
+  push:
+    paths-ignore:
+      - '.github/workflows/**'
+    branches:
+      - main
+
+jobs:
+  build-push:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - uses: abernicchia-heroku/heroku-sources-endpoint-deploy-action@v1
+        with:
+          heroku-api-key: ${{secrets.HEROKU_API_KEY}} # set it on GitHub as secret
+          heroku-app-name: ${{vars.HEROKU_APP_NAME}} # set it on GitHub as variable at repository level
+          remove-git-folder: false # if you want to override the default (true) - it's usually recommended to avoid exposing the .git folder 
+```
