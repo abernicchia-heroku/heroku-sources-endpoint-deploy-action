@@ -8,6 +8,10 @@ inputs:
   heroku-api-key:
     description: "Your Heroku API key"
     required: true
+  remove-git-folder:
+    description: "When true the .git/ folder is removed before creating the tar"
+    required: false
+    default: true   
 
 branding:
   icon: "play-circle"
@@ -15,25 +19,37 @@ branding:
 runs:
   using: "composite"
   steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        echo "Validating inputs ..."
+        [[ "${{ inputs.heroku-api-key }}" ]] || { echo "heroku-api-key is required"; exit 1; }
+        [[ "${{ inputs.heroku-app-name }}" ]] || { echo "heroku-app-name is required"; exit 1; }
+        [[ "${{ inputs.remove-git-folder }}" != "true" && "${{ inputs.remove-git-folder }}" != "false" ]] && { echo "invalid value for remove-git-folder input. Expected 'true' or 'false'"; exit 1; }
+        echo "All inputs are valid"
+
+    # this action must be preceeded by the actions/checkout to retrieve the source code
+    # files filtering must happen at checkout (see sparse-checkout from https://github.com/actions/checkout), 
+    # here everything is included using find to avoid tar unwanted options injection in case the source repo has been compromised (with files name that mimic tar options e.g. "--checkpoint-action=exec=sh shell.sh")
+    # tar output file is created under /tmp to avoid the "warning file changed as we read it" that forces exit code to 1
+    # .git folder is removed before creating the tar if remove-git-folder is true - .git folder is the only dir that cannot be filtered by checkout
+    - name: Compress Source Code
+      shell: bash
+      run: |
+        [[ "${{ inputs.remove-git-folder }}" == "true" ]] && { echo "Removing .git folder ..." ; rm -rf .git; }
+        echo "Compressing Source Code ..."
+        find . -name "*" -print0 | xargs -0 tar -czvf /tmp/source.tar.gz
+
     - name: Create Source Endpoint
       shell: bash
       run: |
-        echo "Creating a source endpoint..."
+        echo "Creating a source endpoint ..."
         SOURCE_ENDPOINT=$(curl --fail-with-body -X POST https://api.heroku.com/sources \
         -H "Content-Type: application/json" \
         -H "Accept: application/vnd.heroku+json; version=3" \
         -H "Authorization: Bearer ${{ inputs.heroku-api-key }}" | \
         jq -er '{get: .source_blob.get_url, put: .source_blob.put_url}')
         echo SOURCE_ENDPOINT=$SOURCE_ENDPOINT >> $GITHUB_ENV
-
-    # it assumes that this action is preceeded by the checkout action to access the source code
-    # files filtering must happen at checkout (see sparse-checkout from https://github.com/actions/checkout), 
-    # here everything is included using find to avoid tar unwanted options injection in case the source repo has been compromised (with files name that mimic tar options e.g. "--checkpoint-action=exec=sh shell.sh")
-    # tar output file is created under /tmp to avoid the "warning file changed as we read it" that forces exit code to 1
-    - name: Compress Source Code
-      shell: bash
-      run: |
-        find . -name "*" -print0 | xargs -0 tar -czvf /tmp/source.tar.gz
 
     - name: Upload Source Code
       shell: bash
