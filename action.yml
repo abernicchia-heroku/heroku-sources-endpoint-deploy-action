@@ -57,10 +57,24 @@ runs:
         URL=$(echo ${{ toJSON(env.SOURCE_ENDPOINT) }} | jq -er '.put')
         curl --fail-with-body $URL -X PUT -H 'Content-Type:' --data-binary @/tmp/source.tar.gz
 
+    # Now that the source code has been uploaded a trap EXIT is configured to catch both normal and error exit and remove the code, reducing its exposure time
     - name: Create Build
       shell: bash
       run: |
         echo "Create Build"
+
+        trap tarball_cleanup EXIT
+
+        tarball_cleanup() {
+            local exit_code=$?
+            
+            echo "Exiting occurred with exit code: $exit_code - removing the source code tarball ..."
+            URL=$(echo ${{ toJSON(env.SOURCE_ENDPOINT) }} | jq -er '.put')
+            curl --fail-with-body $URL -X PUT -H 'Content-Type:' --data-binary ""
+            
+            exit $exit_code
+        }
+
         SOURCE_GET_URL=$(echo ${{ toJSON(env.SOURCE_ENDPOINT) }} | jq -er '.get')
         NEW_BUILD_OUTPUT=$(curl --fail-with-body -X POST https://api.heroku.com/apps/${{ inputs.heroku-app-name }}/builds \
         -d '{"source_blob":{"url":"'"$SOURCE_GET_URL"'", "version": "'"${GITHUB_SHA::7}"'"}}' \
